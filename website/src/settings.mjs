@@ -69,6 +69,25 @@ export const defaultSettings = {
   multiChannelOrbits: false,
   includePrebakeScriptInShare: true,
   settingsTab: 'settings',
+  // visualizer (AudioMotion Analyzer)
+  visualizerControlsOpen: true,
+  visualizerMode: '10', // AudioMotion mode: 10 = bars
+  visualizerGradient: 'prism',
+  visualizerShowPeaks: true,
+  visualizerRadial: false,
+  visualizerAlphaBars: false,
+  visualizerLumiBars: false,
+  visualizerLedBars: false,
+  visualizerMirror: '0', // '0' none, '-1' left, '1' right
+  visualizerReflex: '0', // '0' none, '0.25' mirror, '0.5' full
+  visualizerBarSpace: 0.1,
+  visualizerSensitivity: 'medium', // low | medium | high
+  visualizerBgAlpha: 0.7,
+  // logo overlay
+  visualizerLogoImage: '', // data URL, empty = none
+  visualizerLogoOpacity: 0.5,
+  visualizerLogoPosition: 'front', // front | back
+  visualizerLogoSize: 40, // percent of canvas width
 };
 
 let search = null;
@@ -113,6 +132,16 @@ export const $settings = computed(settingsMap, (state) => {
     userPatterns: userPatterns,
     multiChannelOrbits: parseBoolean(state.multiChannelOrbits),
     includePrebakeScriptInShare: parseBoolean(state.includePrebakeScriptInShare),
+    visualizerControlsOpen: parseBoolean(state.visualizerControlsOpen),
+    visualizerShowPeaks: parseBoolean(state.visualizerShowPeaks),
+    visualizerRadial: parseBoolean(state.visualizerRadial),
+    visualizerAlphaBars: parseBoolean(state.visualizerAlphaBars),
+    visualizerLumiBars: parseBoolean(state.visualizerLumiBars),
+    visualizerLedBars: parseBoolean(state.visualizerLedBars),
+    visualizerBarSpace: Number(state.visualizerBarSpace),
+    visualizerBgAlpha: Number(state.visualizerBgAlpha),
+    visualizerLogoOpacity: Number(state.visualizerLogoOpacity),
+    visualizerLogoSize: Number(state.visualizerLogoSize),
     patternAutoStart: isUdels()
       ? false
       : state.patternAutoStart === undefined
@@ -131,6 +160,7 @@ export const setActiveFooter = (tab) => settingsMap.setKey('activeFooter', tab);
 export const setPanelPinned = (bool) => settingsMap.setKey('isPanelPinned', bool);
 export const setIsPanelOpened = (bool) => settingsMap.setKey('isPanelOpen', bool);
 export const setSettingsTab = (tab) => settingsMap.setKey('settingsTab', tab);
+export const setVisualizerSetting = (key, value) => settingsMap.setKey(key, value);
 
 export const storePrebakeScript = (script) => settingsMap.setKey('prebakeScript', script);
 
