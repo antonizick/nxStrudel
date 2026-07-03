@@ -109,12 +109,131 @@ const reflexPresets = {
 };
 
 const MAX_LOGO_BYTES = 3 * 1024 * 1024;
+const MAX_DANCE_IMAGES = 40;
+const DANCE_SILENCE_ENERGY = 0.02; // below this, treat as "music stopped"
+const DANCE_SILENCE_HOLD_MS = 400; // how long silence must persist before reverting to logo
+const DANCE_MIN_INTERVAL_MS = 90; // fastest swap pace, at max energy or fastest note value
+const DANCE_MAX_INTERVAL_MS = 480; // slowest swap pace, in auto mode at low (but audible) energy
 
-export function VisualizerTab() {
+// note value ladder for tempo-synced pacing, expressed as a fraction of one pattern cycle
+// (quarter note = cycle / 4, assuming the conventional 4-beats-per-cycle reading)
+const NOTE_LADDER = ['1', '2', '4', '8', '16', '32'];
+const NOTE_LABELS = { 1: 'whole', 2: 'half', 4: 'quarter', 8: 'eighth', 16: 'sixteenth', 32: 'thirty-second' };
+const NOTE_LADDER_ENTRY = '4'; // where +/- lands you when leaving "auto"
+
+// Dance-mode images must survive both switching away from the visualizer tab (Panel.jsx
+// unmounts inactive tabs) and full page/server reloads. Held in a module-level store (so
+// tab remounts don't drop it) backed by IndexedDB (so reloads don't either) — IndexedDB
+// stores the actual Blobs natively (no base64 bloat like localStorage would need) and its
+// quota is far larger, and it's browser/origin-scoped storage, so it's untouched by the
+// Astro dev server restarting.
+const danceImageStore = { urls: [] };
+
+const DANCE_DB_NAME = 'strudel-visualizer';
+const DANCE_DB_STORE = 'danceImages';
+const DANCE_DB_KEY = 'current';
+
+function openDanceDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DANCE_DB_NAME, 1);
+    req.onupgradeneeded = () => req.result.createObjectStore(DANCE_DB_STORE);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function loadDanceFilesFromDB() {
+  const db = await openDanceDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(DANCE_DB_STORE, 'readonly');
+    const req = tx.objectStore(DANCE_DB_STORE).get(DANCE_DB_KEY);
+    req.onsuccess = () => resolve(req.result || []);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function saveDanceFilesToDB(files) {
+  const db = await openDanceDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(DANCE_DB_STORE, 'readwrite');
+    tx.objectStore(DANCE_DB_STORE).put(files, DANCE_DB_KEY);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function clearDanceFilesInDB() {
+  const db = await openDanceDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(DANCE_DB_STORE, 'readwrite');
+    tx.objectStore(DANCE_DB_STORE).delete(DANCE_DB_KEY);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+// kicked off once per page load, memoized, so every tab (re)mount just awaits the same
+// in-flight/finished read instead of hitting IndexedDB again
+let danceImagesReady = null;
+function initDanceImagesFromDB() {
+  if (danceImagesReady) return danceImagesReady;
+  danceImagesReady = (async () => {
+    if (typeof indexedDB === 'undefined') return danceImageStore.urls;
+    try {
+      const files = await loadDanceFilesFromDB();
+      if (files.length && !danceImageStore.urls.length) {
+        danceImageStore.urls = files.map((f) => URL.createObjectURL(f));
+      }
+    } catch {
+      // best-effort: IndexedDB can be unavailable (e.g. private browsing) — dance mode
+      // still works in-memory for the session, it just won't survive a reload
+    }
+    return danceImageStore.urls;
+  })();
+  return danceImagesReady;
+}
+if (typeof window !== 'undefined') {
+  initDanceImagesFromDB();
+}
+
+const logoPositionOptions = {
+  center: 'Center',
+  'top-left': 'Top Left',
+  'top-right': 'Top Right',
+  'bottom-left': 'Bottom Left',
+  'bottom-right': 'Bottom Right',
+};
+
+function logoPlacementStyle(position, sizePct) {
+  const width = `${sizePct}%`;
+  switch (position) {
+    case 'top-left':
+      return { top: '4%', left: '4%', width };
+    case 'top-right':
+      return { top: '4%', right: '4%', width };
+    case 'bottom-left':
+      return { bottom: '4%', left: '4%', width };
+    case 'bottom-right':
+      return { bottom: '4%', right: '4%', width };
+    default:
+      // uses the standalone CSS `translate` property (not `transform`) so the dance
+      // driver can freely set `transform` (flip/scale) without clobbering centering
+      return { top: '50%', left: '50%', width, translate: '-50% -50%' };
+  }
+}
+
+export function VisualizerTab({ editorRef } = {}) {
   const containerRef = useRef(null);
   const analyzerRef = useRef(null);
   const fileInputRef = useRef(null);
+  const folderInputRef = useRef(null);
+  const logoImgRef = useRef(null);
+  const staticLogoSrcRef = useRef('');
+  const danceStateRef = useRef({ lastSwap: 0, lastActive: 0, dancing: false, currentIndex: -1 });
+  const danceSpeedModeRef = useRef('auto');
   const [error, setError] = useState(null);
+  // lazy init: pick up images already loaded in a previous mount of this tab
+  const [danceImageCount, setDanceImageCount] = useState(() => danceImageStore.urls.length);
 
   const {
     visualizerControlsOpen,
@@ -132,8 +251,10 @@ export function VisualizerTab() {
     visualizerBgAlpha,
     visualizerLogoImage,
     visualizerLogoOpacity,
+    visualizerLogoLayer,
     visualizerLogoPosition,
     visualizerLogoSize,
+    visualizerDanceSpeedMode,
   } = useSettings();
 
   // create the analyzer once, tapping strudel's own master output node
@@ -152,6 +273,59 @@ export function VisualizerTab() {
       analyzer.canvas.style.position = 'absolute';
       analyzer.canvas.style.inset = '0';
       analyzerRef.current = analyzer;
+
+      // logo "dance" driver: piggybacks on the analyzer's own draw loop (no extra rAF),
+      // mutates the logo <img> directly via refs (no React re-render), so it can't
+      // add jank to the bars/canvas animation running alongside it.
+      analyzer.onCanvasDraw = (instance) => {
+        const img = logoImgRef.current;
+        const urls = danceImageStore.urls;
+        if (!img) return;
+        const st = danceStateRef.current;
+        const now = performance.now();
+        const energy = instance.getEnergy();
+        if (energy > DANCE_SILENCE_ENERGY) st.lastActive = now;
+        const playing = urls.length > 0 && now - st.lastActive < DANCE_SILENCE_HOLD_MS;
+
+        if (playing !== st.dancing) {
+          st.dancing = playing;
+          if (!playing) {
+            st.currentIndex = -1;
+            img.style.transform = '';
+            if (staticLogoSrcRef.current) {
+              img.src = staticLogoSrcRef.current;
+              img.style.visibility = 'visible';
+            } else {
+              img.style.visibility = 'hidden';
+            }
+          }
+        }
+        if (!playing) return;
+
+        const speedMode = danceSpeedModeRef.current;
+        let interval;
+        // cps = cycles per second, live from Strudel's own scheduler; a "quarter note"
+        // is cycle / 4 (conventional 4-beats-per-cycle reading), etc.
+        const cps = editorRef?.current?.repl?.scheduler?.cps;
+        if (speedMode !== 'auto' && cps > 0) {
+          interval = 1000 / cps / Number(speedMode);
+        } else {
+          interval = DANCE_MAX_INTERVAL_MS - energy * (DANCE_MAX_INTERVAL_MS - DANCE_MIN_INTERVAL_MS);
+        }
+        if (now - st.lastSwap < Math.max(DANCE_MIN_INTERVAL_MS, interval)) return;
+        st.lastSwap = now;
+
+        let idx = Math.floor(Math.random() * urls.length);
+        if (urls.length > 1 && idx === st.currentIndex) idx = (idx + 1) % urls.length;
+        st.currentIndex = idx;
+
+        const bass = instance.getEnergy('bass');
+        const flipX = Math.random() < 0.5 ? -1 : 1;
+        const scale = 1 + Math.min(bass, 1) * 0.15;
+        img.src = urls[idx];
+        img.style.visibility = 'visible';
+        img.style.transform = `scale(${flipX * scale}, ${scale})`;
+      };
     } catch (err) {
       setError(err.message);
     }
@@ -159,6 +333,25 @@ export function VisualizerTab() {
       analyzerRef.current?.destroy();
       analyzerRef.current = null;
     };
+  }, []);
+
+  // keep the "revert to this when music stops" src in sync, without touching the DOM
+  // mid-dance (the draw-loop driver above owns img.src while `dancing` is true)
+  useEffect(() => {
+    staticLogoSrcRef.current = visualizerLogoImage;
+    if (!danceStateRef.current.dancing && logoImgRef.current) {
+      logoImgRef.current.style.visibility = visualizerLogoImage ? 'visible' : 'hidden';
+    }
+  }, [visualizerLogoImage]);
+
+  useEffect(() => {
+    danceSpeedModeRef.current = visualizerDanceSpeedMode;
+  }, [visualizerDanceSpeedMode]);
+
+  // picks up images restored from IndexedDB — a no-op if that read already finished
+  // before this mount (the lazy useState initializer already had the right count)
+  useEffect(() => {
+    initDanceImagesFromDB().then((urls) => setDanceImageCount(urls.length));
   }, []);
 
   // push setting changes to the running analyzer instance
@@ -207,18 +400,68 @@ export function VisualizerTab() {
     reader.readAsDataURL(file);
   };
 
+  const handleDanceFolderSelect = (e) => {
+    const files = Array.from(e.target.files || []).filter((f) => f.type.startsWith('image/'));
+    e.target.value = ''; // allow re-selecting the same folder later
+    if (!files.length) return;
+    if (files.some((f) => f.size > MAX_LOGO_BYTES)) {
+      setError('one or more images in that folder exceed 3MB and were skipped');
+    } else {
+      setError(null);
+    }
+    const usable = files.filter((f) => f.size <= MAX_LOGO_BYTES).slice(0, MAX_DANCE_IMAGES);
+    danceImageStore.urls.forEach((url) => URL.revokeObjectURL(url));
+    danceImageStore.urls = usable.map((f) => URL.createObjectURL(f));
+    danceStateRef.current.currentIndex = -1;
+    setDanceImageCount(danceImageStore.urls.length);
+    // persist in the background — dance mode already works from the object URLs above
+    // even if this fails (e.g. private browsing), it just won't survive a reload
+    saveDanceFilesToDB(usable).catch(() => setError('images loaded, but could not be saved for next time'));
+  };
+
+  const clearDanceFolder = () => {
+    danceImageStore.urls.forEach((url) => URL.revokeObjectURL(url));
+    danceImageStore.urls = [];
+    clearDanceFilesInDB().catch(() => {});
+    danceStateRef.current = { lastSwap: 0, lastActive: 0, dancing: false, currentIndex: -1 };
+    setDanceImageCount(0);
+    if (logoImgRef.current) {
+      logoImgRef.current.style.transform = '';
+      if (staticLogoSrcRef.current) {
+        logoImgRef.current.src = staticLogoSrcRef.current;
+        logoImgRef.current.style.visibility = 'visible';
+      } else {
+        logoImgRef.current.style.visibility = 'hidden';
+      }
+    }
+  };
+
+  const stepDanceSpeed = (dir) => {
+    if (visualizerDanceSpeedMode === 'auto') {
+      setVisualizerSetting('visualizerDanceSpeedMode', NOTE_LADDER_ENTRY);
+      return;
+    }
+    const idx = NOTE_LADDER.indexOf(visualizerDanceSpeedMode);
+    const nextIdx = Math.min(NOTE_LADDER.length - 1, Math.max(0, idx + dir));
+    setVisualizerSetting('visualizerDanceSpeedMode', NOTE_LADDER[nextIdx]);
+  };
+  const danceSpeedLabel =
+    visualizerDanceSpeedMode === 'auto' ? 'auto (follows energy)' : `${NOTE_LABELS[visualizerDanceSpeedMode]} note`;
+
   return (
     <div className="w-full h-full flex flex-col text-foreground">
       <div ref={containerRef} className="relative w-full grow bg-black overflow-hidden min-h-[200px]">
-        {visualizerLogoImage && (
+        {(visualizerLogoImage || danceImageCount > 0) && (
           <img
-            src={visualizerLogoImage}
+            ref={logoImgRef}
+            src={visualizerLogoImage || undefined}
             alt="logo overlay"
-            className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none"
+            className="absolute pointer-events-none block"
             style={{
-              width: `${visualizerLogoSize}%`,
+              ...logoPlacementStyle(visualizerLogoPosition, visualizerLogoSize),
               opacity: visualizerLogoOpacity,
-              zIndex: visualizerLogoPosition === 'front' ? 2 : 0,
+              zIndex: visualizerLogoLayer === 'front' ? 2 : 0,
+              visibility: visualizerLogoImage ? 'visible' : 'hidden',
             }}
           />
         )}
@@ -331,10 +574,78 @@ export function VisualizerTab() {
                 />
               </div>
             </FormItem>
+            <FormItem label="Logo Dance Folder">
+              <div className="flex flex-col gap-1 items-start">
+                <button
+                  className="px-2 border border-muted hover:opacity-50 whitespace-nowrap"
+                  onClick={() => folderInputRef.current?.click()}
+                >
+                  select folder
+                </button>
+                {danceImageCount > 0 && (
+                  <div className="flex items-center space-x-2">
+                    <span className="opacity-75 whitespace-nowrap">{danceImageCount} imgs</span>
+                    <button
+                      className="px-2 border border-muted hover:opacity-50 whitespace-nowrap"
+                      onClick={clearDanceFolder}
+                    >
+                      clear
+                    </button>
+                  </div>
+                )}
+                <input
+                  ref={folderInputRef}
+                  type="file"
+                  accept="image/*"
+                  webkitdirectory=""
+                  directory=""
+                  multiple
+                  className="hidden"
+                  onChange={handleDanceFolderSelect}
+                />
+              </div>
+            </FormItem>
+            <FormItem label="Dance Speed">
+              <div className="flex flex-col gap-1">
+                <div className="flex items-center space-x-1">
+                  <button
+                    className="w-6 h-7 border border-muted hover:opacity-50"
+                    onClick={() => stepDanceSpeed(-1)}
+                    title="slower note value"
+                  >
+                    −
+                  </button>
+                  <button
+                    className={cx(
+                      'px-2 h-7 border border-muted hover:opacity-50 whitespace-nowrap',
+                      visualizerDanceSpeedMode === 'auto' && 'border-foreground',
+                    )}
+                    onClick={() => setVisualizerSetting('visualizerDanceSpeedMode', 'auto')}
+                  >
+                    default
+                  </button>
+                  <button
+                    className="w-6 h-7 border border-muted hover:opacity-50"
+                    onClick={() => stepDanceSpeed(1)}
+                    title="faster note value"
+                  >
+                    +
+                  </button>
+                </div>
+                <span className="opacity-75 whitespace-nowrap">{danceSpeedLabel}</span>
+              </div>
+            </FormItem>
             <FormItem label="Logo Layer">
               <ButtonGroup
-                value={visualizerLogoPosition}
+                value={visualizerLogoLayer}
                 items={{ back: 'behind', front: 'in front' }}
+                onChange={(v) => setVisualizerSetting('visualizerLogoLayer', v)}
+              />
+            </FormItem>
+            <FormItem label="Logo Position">
+              <SelectInput
+                value={visualizerLogoPosition}
+                options={logoPositionOptions}
                 onChange={(v) => setVisualizerSetting('visualizerLogoPosition', v)}
               />
             </FormItem>

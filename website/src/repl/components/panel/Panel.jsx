@@ -276,7 +276,7 @@ function PanelContent({ context, tab }) {
     case tabNames.export:
       return <ExportTab handleExport={context.handleExport} />;
     case tabNames.visualizer:
-      return <VisualizerTab />;
+      return <VisualizerTab editorRef={context.editorRef} />;
     case tabNames.settings:
       return <SettingsTab started={context.started} />;
     case tabNames.files:

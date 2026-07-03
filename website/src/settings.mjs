@@ -83,11 +83,15 @@ export const defaultSettings = {
   visualizerBarSpace: 0.1,
   visualizerSensitivity: 'medium', // low | medium | high
   visualizerBgAlpha: 0.7,
+  // logo dance pacing: 'auto' (follows music energy) | '1'|'2'|'4'|'8'|'16'|'32' (note value,
+  // as a fraction of the pattern's cycle length: quarter note = cycle / 4, etc.)
+  visualizerDanceSpeedMode: 'auto',
   // logo overlay
   visualizerLogoImage: '', // data URL, empty = none
   visualizerLogoOpacity: 0.5,
-  visualizerLogoPosition: 'front', // front | back
+  visualizerLogoLayer: 'front', // front | back
   visualizerLogoSize: 40, // percent of canvas width
+  visualizerLogoPosition: 'center', // center | top-left | top-right | bottom-left | bottom-right
 };
 
 let search = null;
