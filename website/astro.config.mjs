@@ -11,6 +11,57 @@ import tailwind from '@astrojs/tailwind';
 import AstroPWA from '@vite-pwa/astro';
 
 import process from 'node:process';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+// Dev-only bridge letting Claude Code read/write the live pattern via a shared file,
+// so `bridge/pattern.strudel` at the repo root is the sync point between editor and REPL.
+// Override BRIDGE_DIR for a disposable verification instance so it doesn't collide with
+// whatever pattern is live in Nick's real session.
+function strudelBridgePlugin() {
+  const bridgeDir = process.env.BRIDGE_DIR || fileURLToPath(new URL('../bridge', import.meta.url));
+  const bridgeFile = path.join(bridgeDir, 'pattern.strudel');
+  return {
+    name: 'strudel-bridge',
+    configureServer(server) {
+      fs.mkdirSync(bridgeDir, { recursive: true });
+      server.middlewares.use('/bridge/pattern', (req, res) => {
+        if (req.method === 'GET') {
+          let code = '';
+          let mtimeMs = 0;
+          try {
+            code = fs.readFileSync(bridgeFile, 'utf8');
+            mtimeMs = fs.statSync(bridgeFile).mtimeMs;
+          } catch {
+            // no pattern written yet
+          }
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ code, mtimeMs }));
+          return;
+        }
+        if (req.method === 'POST') {
+          let body = '';
+          req.on('data', (chunk) => (body += chunk));
+          req.on('end', () => {
+            try {
+              const { code } = JSON.parse(body);
+              fs.writeFileSync(bridgeFile, code ?? '');
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify({ ok: true, mtimeMs: fs.statSync(bridgeFile).mtimeMs }));
+            } catch (e) {
+              res.statusCode = 400;
+              res.end(JSON.stringify({ ok: false, error: e.message }));
+            }
+          });
+          return;
+        }
+        res.statusCode = 405;
+        res.end();
+      });
+    },
+  };
+}
 
 const site = process.env.SITE_URL || `https://strudel.cc/`; // root url without a path
 const base = process.env.BASE_PATH || ''; // base path of the strudel site
@@ -62,6 +113,7 @@ const options = {
 
 // https://astro.build/config
 export default defineConfig({
+  devToolbar: { enabled: false },
   integrations: [
     react(),
     mdx(options),
@@ -139,7 +191,7 @@ export default defineConfig({
   site,
   base,
   vite: {
-    plugins: [bundleAudioWorkletPlugin()],
+    plugins: [bundleAudioWorkletPlugin(), strudelBridgePlugin()],
     ssr: {
       // Example: Force a broken package to skip SSR processing, if needed
       // external: ['fraction.js'], // https://github.com/infusion/Fraction.js/issues/51

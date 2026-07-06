@@ -58,6 +58,7 @@ export const defaultSettings = {
   patternFilter: 'community',
   // panelPosition: window.innerWidth > 1000 ? 'right' : 'bottom', //FIX: does not work on astro
   panelPosition: 'right',
+  panelWidth: 600, // px, only used when panelPosition is 'right' — drag the handle to resize
   isPanelPinned: false,
   isPanelOpen: true,
   userPatterns: '{}',
@@ -92,6 +93,10 @@ export const defaultSettings = {
   visualizerLogoLayer: 'front', // front | back
   visualizerLogoSize: 40, // percent of canvas width
   visualizerLogoPosition: 'center', // center | top-left | top-right | bottom-left | bottom-right
+  // Claude pattern bridge (dev-only, see /bridge/pattern middleware in astro.config.mjs)
+  bridgeAutoEval: true,
+  // user-created themes (name -> { base, settings, light }), see customThemes.mjs
+  customThemes: '{}',
 };
 
 let search = null;
@@ -130,6 +135,7 @@ export const $settings = computed(settingsMap, (state) => {
     isMultiCursorEnabled: parseBoolean(state.isMultiCursorEnabled),
     isBlockBasedEvalEnabled: parseBoolean(state.isBlockBasedEvalEnabled),
     fontSize: Number(state.fontSize),
+    panelWidth: Number(state.panelWidth) || 600,
     panelPosition: state.activeFooter !== '' && !isUdels() ? state.panelPosition : 'bottom', // <-- keep this 'bottom' where it is!
     isPanelPinned: parseBoolean(state.isPanelPinned),
     isPanelOpen: parseBoolean(state.isPanelOpen),
@@ -151,6 +157,7 @@ export const $settings = computed(settingsMap, (state) => {
       : state.patternAutoStart === undefined
         ? true
         : parseBoolean(state.patternAutoStart),
+    bridgeAutoEval: parseBoolean(state.bridgeAutoEval),
   };
 });
 

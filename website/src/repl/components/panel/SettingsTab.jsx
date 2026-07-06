@@ -1,5 +1,5 @@
 import { defaultSettings, settingsMap, useSettings, storePrebakeScript, setSettingsTab } from '../../../settings.mjs';
-import { themes } from '@strudel/codemirror';
+import { themes, activateTheme } from '@strudel/codemirror';
 import { PrebakeCodeMirror } from '../../../repl/prebakeCodeMirror.mjs';
 import { confirmAndReloadPage, isUdels } from '../../util.mjs';
 import { ButtonGroup } from './Forms.jsx';
@@ -9,8 +9,18 @@ import { confirmDialog } from '../../util.mjs';
 import { DEFAULT_MAX_POLYPHONY, setMaxPolyphony, setMultiChannelOrbits } from '@strudel/webaudio';
 import { ActionButton } from '../button/action-button.jsx';
 import { exportScript, ImportPrebakeScriptButton } from './ImportPrebakeScriptButton.jsx';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import cx from '@src/cx.mjs';
+import {
+  COLOR_KEYS,
+  getCustomThemes,
+  getBaseThemeSettings,
+  saveCustomTheme,
+  deleteCustomTheme,
+  previewTheme,
+  discardPreview,
+  PREVIEW_THEME_NAME,
+} from '../../customThemes.mjs';
 
 const inputClass =
   'bg-background text-xs h-8 max-h-8 border border-box rounded-0 text-foreground border-muted placeholder-muted focus:outline-none focus:ring-0 focus:border-foreground';
@@ -101,7 +111,6 @@ function FormItem({ label, children, sublabel }) {
   );
 }
 
-const themeOptions = Object.fromEntries(Object.keys(themes).map((k) => [k, k]));
 const fontFamilyOptions = {
   monospace: 'monospace',
   Courier: 'Courier',
@@ -121,7 +130,155 @@ const fontFamilyOptions = {
   galactico: 'galactico',
 };
 
-function MainSettingsContent({ started }) {
+// Best-effort CSS color -> "#rrggbb" for <input type="color">, which only accepts that exact
+// format. Uses the browser's own color parser (via canvas) so named colors / rgba / short hex
+// all resolve; alpha is dropped since the color input can't represent it.
+function toHex(css) {
+  try {
+    const ctx = document.createElement('canvas').getContext('2d');
+    ctx.fillStyle = '#000000';
+    ctx.fillStyle = css;
+    const out = ctx.fillStyle;
+    if (/^#[0-9a-f]{6}$/i.test(out)) {
+      return out;
+    }
+    const m = out.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
+    if (m) {
+      return '#' + m.slice(1, 4).map((v) => (+v).toString(16).padStart(2, '0')).join('');
+    }
+  } catch {
+    // fall through to default below
+  }
+  return '#000000';
+}
+
+function ThemeColorField({ label, value, onChange }) {
+  return (
+    <label className="flex items-center justify-between gap-2 text-xs">
+      <span>{label}</span>
+      <input
+        type="color"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="h-6 w-10 border border-muted bg-background"
+      />
+    </label>
+  );
+}
+
+function ThemeEditorForm({ baseTheme, editingName, editorRef, onSave, onCancel }) {
+  // `baseTheme` is whatever theme was actually active when this form opened — the color seed
+  // for a brand new duplicate, and (regardless of new/edit) exactly what Cancel should revert to
+  const existing = editingName ? getCustomThemes()[editingName] : null;
+  const seed = existing?.settings || getBaseThemeSettings(existing?.base || baseTheme);
+  const [name, setName] = useState(editingName || `${baseTheme}-copy`);
+  const [light, setLight] = useState(existing ? !!existing.light : !!seed.light);
+  const [colors, setColors] = useState(() => Object.fromEntries(COLOR_KEYS.map((k) => [k, toHex(seed[k])])));
+
+  // live preview: apply every color/light change immediately, without touching persisted state
+  useEffect(() => {
+    previewTheme({ base: existing?.base || baseTheme, settings: colors, light });
+    editorRef?.current?.setTheme(PREVIEW_THEME_NAME);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [colors, light]);
+
+  const handleCancel = () => {
+    discardPreview();
+    activateTheme(baseTheme, true);
+    editorRef?.current?.setTheme(baseTheme);
+    onCancel();
+  };
+
+  const handleSave = () => {
+    if (!name.trim()) {
+      return;
+    }
+    discardPreview();
+    onSave(name.trim(), { base: existing?.base || baseTheme, settings: colors, light });
+  };
+
+  return (
+    <div className="border border-muted p-2 space-y-2">
+      <Textbox value={name} onChange={setName} placeholder="theme name" />
+      <label className="flex items-center gap-2 text-xs">
+        <input type="checkbox" checked={light} onChange={(e) => setLight(e.target.checked)} />
+        <span>Light theme</span>
+      </label>
+      <div className="grid grid-cols-2 gap-1">
+        {COLOR_KEYS.map((key) => (
+          <ThemeColorField
+            key={key}
+            label={key}
+            value={colors[key]}
+            onChange={(v) => setColors((c) => ({ ...c, [key]: v }))}
+          />
+        ))}
+      </div>
+      <div className="flex gap-2">
+        <ActionButton className="bg-background p-2 hover:opacity-50" onClick={handleSave}>
+          save
+        </ActionButton>
+        <ActionButton className="bg-background p-2 hover:opacity-50" onClick={handleCancel}>
+          cancel
+        </ActionButton>
+      </div>
+    </div>
+  );
+}
+
+function CustomThemeManager({ currentTheme, editorRef }) {
+  const [editing, setEditing] = useState(null); // null | 'new' | <existing theme name>
+  const custom = getCustomThemes();
+  const names = Object.keys(custom);
+
+  if (editing) {
+    return (
+      <ThemeEditorForm
+        baseTheme={currentTheme}
+        editingName={editing === 'new' ? null : editing}
+        editorRef={editorRef}
+        onSave={(name, def) => {
+          saveCustomTheme(name, def);
+          settingsMap.setKey('theme', name);
+          // settingsMap.setKey is a no-op if `theme` is already `name` (editing the active theme) —
+          // its underlying color definition just changed though, so force CodeMirror to reconfigure
+          // regardless of whether the setting value itself changed
+          editorRef?.current?.setTheme(name);
+          setEditing(null);
+        }}
+        onCancel={() => setEditing(null)}
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-1">
+      <ActionButton className="bg-background p-2 hover:opacity-50" onClick={() => setEditing('new')}>
+        duplicate "{currentTheme}" as new theme
+      </ActionButton>
+      {names.map((name) => (
+        <div key={name} className="flex items-center justify-between text-xs gap-2">
+          <span>{name}</span>
+          <div className="flex gap-2">
+            <ActionButton onClick={() => setEditing(name)}>edit</ActionButton>
+            <ActionButton
+              onClick={() => {
+                deleteCustomTheme(name);
+                if (currentTheme === name) {
+                  settingsMap.setKey('theme', 'strudelTheme');
+                }
+              }}
+            >
+              delete
+            </ActionButton>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function MainSettingsContent({ started, editorRef }) {
   const {
     theme,
     keybindings,
@@ -148,9 +305,11 @@ function MainSettingsContent({ started }) {
     isMultiCursorEnabled,
     patternAutoStart,
     isBlockBasedEvalEnabled,
+    bridgeAutoEval,
   } = useSettings();
   const shouldAlwaysSync = isUdels();
   const canChangeAudioDevice = AudioContext.prototype.setSinkId != null;
+  const themeOptions = Object.fromEntries(Object.keys(themes).map((k) => [k, k]));
   return (
     <div className="p-4 text-foreground space-y-4 w-full overflow-auto" style={{ fontFamily }}>
       {canChangeAudioDevice && (
@@ -211,6 +370,9 @@ function MainSettingsContent({ started }) {
       </FormItem>
       <FormItem label="Theme">
         <SelectInput options={themeOptions} value={theme} onChange={(theme) => settingsMap.setKey('theme', theme)} />
+      </FormItem>
+      <FormItem label="Custom Themes">
+        <CustomThemeManager currentTheme={theme} editorRef={editorRef} />
       </FormItem>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <FormItem label="Font Family">
@@ -332,6 +494,11 @@ function MainSettingsContent({ started }) {
           onChange={(cbEvent) => settingsMap.setKey('patternAutoStart', cbEvent.target.checked)}
           value={patternAutoStart}
         />
+        <Checkbox
+          label="Auto-evaluate patterns from Claude bridge"
+          onChange={(cbEvent) => settingsMap.setKey('bridgeAutoEval', cbEvent.target.checked)}
+          value={bridgeAutoEval}
+        />
       </FormItem>
       <FormItem label="Zen Mode">Try clicking the logo in the top left!</FormItem>
       <FormItem label="Reset Settings">
@@ -391,7 +558,7 @@ function PrebakeSettingsContent() {
     </div>
   );
 }
-export function SettingsTab({ started }) {
+export function SettingsTab({ started, editorRef }) {
   const { settingsTab } = useSettings();
   return (
     <div className="w-full h-full text-foreground flex flex-col overflow-hidden">
@@ -406,7 +573,7 @@ export function SettingsTab({ started }) {
           }}
         ></ButtonGroup>
       </div>
-      {settingsTab === 'settings' && <MainSettingsContent started={started} />}
+      {settingsTab === 'settings' && <MainSettingsContent started={started} editorRef={editorRef} />}
       {settingsTab === 'prebake' && <PrebakeSettingsContent />}
     </div>
   );

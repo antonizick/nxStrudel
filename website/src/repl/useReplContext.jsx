@@ -39,11 +39,14 @@ import './Repl.css';
 import { setInterval, clearInterval } from 'worker-timers';
 import { getMetadata } from '../metadata_parser';
 import { debugAudiograph } from './audiograph';
+import { startPatternBridge, pushPatternToBridge } from './bridge.mjs';
+import { registerCustomThemes } from './customThemes.mjs';
 
 const { latestCode, maxPolyphony, audioDeviceName, multiChannelOrbits } = settingsMap.get();
 let modulesLoading, presets, drawContext, clearCanvas, audioReady;
 
 if (typeof window !== 'undefined') {
+  registerCustomThemes(); // before initTheme() runs (inside StrudelMirror's construction below)
   audioReady = initAudioOnFirstClick({
     maxPolyphony,
     audioDeviceName,
@@ -110,6 +113,7 @@ export function useReplContext() {
         // Get the full buffer content from the editor instead of just the evaluated block
         const fullBufferCode = editorRef.current?.code || code;
         setLatestCode(fullBufferCode);
+        pushPatternToBridge(fullBufferCode);
 
         try {
           window.location.hash = '#' + code2hash(fullBufferCode);
@@ -163,6 +167,7 @@ export function useReplContext() {
     });
 
     editorRef.current = editor;
+    startPatternBridge(editorRef);
   }, []);
 
   const [replState, setReplState] = useState({});

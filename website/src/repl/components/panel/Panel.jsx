@@ -1,7 +1,7 @@
 import { Bars3Icon, PlayIcon, StopIcon, XMarkIcon } from '@heroicons/react/16/solid';
 import cx from '@src/cx.mjs';
 import { StrudelIcon } from '@src/repl/components/icons/StrudelIcon';
-import { useSettings, setIsZen, setIsPanelOpened, setActiveFooter as setTab } from '../../../settings.mjs';
+import { useSettings, settingsMap, setIsZen, setIsPanelOpened, setActiveFooter as setTab } from '../../../settings.mjs';
 import '../../Repl.css';
 import { useLogger } from '../useLogger';
 import { ConsoleTab } from './ConsoleTab';
@@ -203,20 +203,50 @@ export function BottomPanel({ context }) {
   );
 }
 
+function PanelResizeHandle() {
+  const onMouseDown = (e) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = settingsMap.get().panelWidth || 600;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    const onMove = (ev) => {
+      // panel is on the right: dragging left (mouse moves left of start) should widen it
+      const delta = startX - ev.clientX;
+      const next = Math.min(Math.max(startWidth + delta, 280), Math.floor(window.innerWidth * 0.9));
+      settingsMap.setKey('panelWidth', next);
+    };
+    const onUp = () => {
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
+  return (
+    <div
+      onMouseDown={onMouseDown}
+      className="absolute left-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-foreground/30 active:bg-foreground/50 z-10"
+      aria-label="Resize panel"
+    />
+  );
+}
+
 export function RightPanel({ context }) {
   const settings = useSettings();
-  const { activeFooter: tab, isPanelOpen } = settings;
+  const { activeFooter: tab, isPanelOpen, panelWidth } = settings;
   if (!isPanelOpen) {
     return;
   }
   return (
     <PanelNav
       settings={settings}
-      className={cx(
-        'border-l border-muted shrink-0 h-full overflow-hidden',
-        isPanelOpen ? `min-w-[min(600px,100vw)] max-w-[min(600px,80vw)]` : 'min-w-12 max-w-12',
-      )}
+      className="border-l border-muted shrink-0 h-full overflow-hidden relative"
+      style={{ width: panelWidth, minWidth: 280, maxWidth: '90vw' }}
     >
+      <PanelResizeHandle />
       <div className={cx('flex flex-col h-full')}>
         <div className="flex justify-between w-full overflow-hidden border-b border-muted min-h-10 max-h-10">
           <PanelCloseButton />
@@ -278,7 +308,7 @@ function PanelContent({ context, tab }) {
     case tabNames.visualizer:
       return <VisualizerTab editorRef={context.editorRef} />;
     case tabNames.settings:
-      return <SettingsTab started={context.started} />;
+      return <SettingsTab started={context.started} editorRef={context.editorRef} />;
     case tabNames.files:
       return <FilesTab />;
     default:

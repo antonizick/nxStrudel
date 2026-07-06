@@ -176,10 +176,37 @@ export const userPattern = {
     }
     return { id: viewingID, data: userPatterns[viewingID] };
   },
+  edit(id, newName, newAuthor) {
+    const userPatterns = this.getAll();
+    const pattern = userPatterns[id];
+    if (pattern) {
+      pattern.customName = newName;
+      pattern.customBy = newAuthor;
+      setUserPatterns(userPatterns);
+    }
+    return { id, data: pattern };
+  },
 };
 
 function setUserPatterns(obj) {
   return settingsMap.setKey('userPatterns', JSON.stringify(obj));
+}
+
+export function getPatternOrder() {
+  const patterns = parseJSON(settingsMap.get().userPatterns) || {};
+  const allIds = Object.keys(patterns).filter(k => k !== '_order');
+  if (patterns._order) {
+    const order = patterns._order.filter(id => id in patterns);
+    const unorderedIds = allIds.filter(id => !order.includes(id));
+    return [...order, ...unorderedIds];
+  }
+  return allIds.reverse();
+}
+
+export function setPatternOrder(order) {
+  const patterns = parseJSON(settingsMap.get().userPatterns) || {};
+  patterns._order = order;
+  settingsMap.setKey('userPatterns', JSON.stringify(patterns));
 }
 
 export const createPatternID = () => {

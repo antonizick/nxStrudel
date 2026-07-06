@@ -1,0 +1,28 @@
+setcpm(126/4)
+
+const useDrums = 1, useHats = 1, useBass = 1, usePad = 1, useVocals = 1
+
+samples('github:tidalcycles/dirt-samples')
+
+const drums = s("bd*4, ~ cp ~ cp").bank('RolandTR909')
+const hats  = s("[~ hh]*4, oh(1,8,4)").bank('RolandTR909').gain(0.6).pan(sine.slow(4))
+const bass  = note("<g1!3 f1>*8").s('sawtooth')
+  .lpf(sine.range(300, 1500).slow(8)).lpq(8)
+  .decay(0.12).sustain(0).gain(0.8)
+const pad   = note("<[g3,bb3,d4] [f3,a3,c4]>").s('gm_pad_warm')
+  .slow(2).attack(0.3).release(0.5).room(0.6).gain(0.35)
+
+// vocal chant sample - classic house/techno style
+const vocals = s("yeah:3(3,8)")
+  .bank('dirt-samples')
+  .begin(0.2)
+  .attack(.01).release(.05)
+  .gain(useVocals ? 0.4 : 0)
+
+stack(
+  useDrums ? drums : silence,
+  useHats  ? hats  : silence,
+  useBass  ? bass  : silence,
+  usePad   ? pad   : silence,
+  useVocals ? vocals : silence,
+)

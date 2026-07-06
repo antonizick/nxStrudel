@@ -7,6 +7,8 @@ import {
   useActivePattern,
   useViewingPatternData,
   userPattern,
+  getPatternOrder,
+  setPatternOrder,
 } from '../../../user_pattern_utils.mjs';
 import { useMemo, useRef } from 'react';
 import { getMetadata } from '../../../metadata_parser.js';
@@ -23,7 +25,7 @@ import { Textbox } from '@src/repl/components/panel/SettingsTab.jsx';
 export function PatternLabel({ pattern } /* : { pattern: Tables<'code'> } */) {
   const meta = useMemo(() => getMetadata(pattern.code), [pattern]);
 
-  let title = meta.title;
+  let title = pattern.customName || meta.title;
   if (title == null) {
     const date = new Date(pattern.created_at);
     if (!isNaN(date)) {
@@ -33,44 +35,166 @@ export function PatternLabel({ pattern } /* : { pattern: Tables<'code'> } */) {
     }
   }
 
-  const author = Array.isArray(meta.by) ? meta.by.join(',') : 'Anonymous';
+  const author = pattern.customBy || (Array.isArray(meta.by) ? meta.by.join(',') : 'Anonymous');
   return <>{`${title} by ${author.slice(0, 100)}`.slice(0, 60)}</>;
 }
 
-function PatternButton({ showOutline, onClick, pattern, showHiglight }) {
+function PatternButton({ showOutline, onClick, pattern, showHiglight, onDragStart, onDragOver, onDrop, isDragging }) {
   return (
     <a
+      draggable
       className={cx(
-        'mr-4 hover:opacity-50 cursor-pointer block',
+        'mr-4 hover:opacity-50 cursor-move block py-1 px-2 rounded',
         showOutline && 'outline outline-1',
         showHiglight && 'ring-selection',
+        isDragging && 'opacity-50 bg-muted',
       )}
       onClick={onClick}
+      onDragStart={onDragStart}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
     >
       <PatternLabel pattern={pattern} />
     </a>
   );
 }
 
-function PatternButtons({ patterns, activePattern, onClick, started }) {
+function EditDialog({ pattern, onConfirm, onCancel }) {
+  const meta = useMemo(() => getMetadata(pattern.code), [pattern]);
+  const [newName, setNewName] = useState(pattern.customName || '');
+  const [newAuthor, setNewAuthor] = useState(pattern.customBy || (Array.isArray(meta.by) ? meta.by.join(', ') : ''));
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    onConfirm(newName, newAuthor);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="bg-background border border-muted rounded p-4 w-80">
+        <h2 className="text-foreground mb-4">Edit Pattern</h2>
+        <form onSubmit={handleSubmit}>
+          <label className="block text-sm text-foreground mb-2">Title</label>
+          <Textbox
+            value={newName}
+            onChange={setNewName}
+            placeholder="Enter pattern title..."
+            autoFocus
+            className="w-full mb-4"
+          />
+          <label className="block text-sm text-foreground mb-2">Author</label>
+          <Textbox
+            value={newAuthor}
+            onChange={setNewAuthor}
+            placeholder="Enter author name..."
+            className="w-full mb-4"
+          />
+          <div className="flex gap-2 justify-end">
+            <button
+              type="button"
+              className="px-3 py-1 text-sm border rounded hover:bg-muted"
+              onClick={onCancel}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="px-3 py-1 text-sm bg-selection text-foreground rounded hover:opacity-80"
+            >
+              Save
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function DeleteConfirmDialog({ pattern, onConfirm, onCancel }) {
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="bg-background border border-muted rounded p-4 w-80">
+        <h2 className="text-foreground mb-4">Delete Pattern?</h2>
+        <p className="text-foreground mb-6">
+          Are you sure you want to delete <strong><PatternLabel pattern={pattern} /></strong>?
+        </p>
+        <div className="flex gap-2 justify-end">
+          <button
+            type="button"
+            className="px-3 py-1 text-sm border rounded hover:bg-muted"
+            onClick={onCancel}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="px-3 py-1 text-sm bg-red-600 text-foreground rounded hover:opacity-80"
+            onClick={onConfirm}
+          >
+            Delete
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PatternButtons({ patterns, activePattern, onClick, started, onReorder }) {
   const viewingPatternData = useViewingPatternData();
   const viewingPatternID = viewingPatternData.id;
+  const [draggedId, setDraggedId] = useState(null);
+  const [dragOverId, setDragOverId] = useState(null);
+
+  const order = useMemo(() => {
+    return getPatternOrder().filter((id) => id in patterns && id !== '_order');
+  }, [patterns]);
+
+  const handleDragStart = (e, id) => {
+    setDraggedId(id);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragOver = (e, id) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverId(id);
+  };
+
+  const handleDrop = (e, targetId) => {
+    e.preventDefault();
+    if (draggedId && draggedId !== targetId) {
+      const newOrder = [...order];
+      const draggedIndex = newOrder.indexOf(draggedId);
+      const targetIndex = newOrder.indexOf(targetId);
+
+      newOrder.splice(draggedIndex, 1);
+      newOrder.splice(targetIndex, 0, draggedId);
+
+      onReorder(newOrder);
+    }
+    setDraggedId(null);
+    setDragOverId(null);
+  };
+
   return (
     <div className="p-2">
-      {Object.values(patterns)
-        .reverse()
-        .map((pattern) => {
-          const id = pattern.id;
-          return (
-            <PatternButton
-              pattern={pattern}
-              key={id}
-              showHiglight={id === viewingPatternID}
-              showOutline={id === activePattern && started}
-              onClick={() => onClick(id)}
-            />
-          );
-        })}
+      {order.map((id) => {
+        const pattern = patterns[id];
+        if (!pattern) return null;
+        return (
+          <PatternButton
+            pattern={pattern}
+            key={id}
+            showHiglight={id === viewingPatternID}
+            showOutline={id === activePattern && started}
+            onClick={() => onClick(id)}
+            onDragStart={(e) => handleDragStart(e, id)}
+            onDragOver={(e) => handleDragOver(e, id)}
+            onDrop={(e) => handleDrop(e, id)}
+            isDragging={draggedId === id}
+          />
+        );
+      })}
     </div>
   );
 }
@@ -81,6 +205,8 @@ const updateCodeWindow = (context, patternData, reset = false) => {
 
 export function PatternsTab({ context }) {
   const [search, setSearch] = useState('');
+  const [editTarget, setEditTarget] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
   const activePattern = useActivePattern();
   const viewingPatternData = useViewingPatternData();
 
@@ -122,9 +248,43 @@ export function PatternsTab({ context }) {
     );
   }, [search, userPatterns]);
 
+  const handleEdit = (newName, newAuthor) => {
+    if (newName.trim()) {
+      const { data } = userPattern.edit(editTarget.id, newName.trim(), newAuthor.trim());
+      if (viewingPatternID === editTarget.id) {
+        updateCodeWindow(context, { ...data, collection: userPattern.collection });
+      }
+    }
+    setEditTarget(null);
+  };
+
+  const handleConfirmDelete = () => {
+    const { data } = userPattern.delete(deleteTarget.id);
+    updateCodeWindow(context, { ...data, collection: userPattern.collection });
+    setDeleteTarget(null);
+  };
+
+  const handleReorder = (newOrder) => {
+    setPatternOrder(newOrder);
+  };
+
   const importRef = useRef();
   return (
     <div className="w-full h-full text-foreground flex flex-col overflow-hidden">
+      {editTarget && (
+        <EditDialog
+          pattern={editTarget}
+          onConfirm={handleEdit}
+          onCancel={() => setEditTarget(null)}
+        />
+      )}
+      {deleteTarget && (
+        <DeleteConfirmDialog
+          pattern={deleteTarget}
+          onConfirm={handleConfirmDelete}
+          onCancel={() => setDeleteTarget(null)}
+        />
+      )}
       <Textbox className="w-full border-0" placeholder="Search..." value={search} onChange={setSearch} />
       <div className="px-2 shrink-0 h-8 space-x-4 flex max-w-full overflow-x-auto border-y border-muted">
         <ActionButton
@@ -142,10 +302,19 @@ export function PatternsTab({ context }) {
           }}
         />
         <ActionButton
+          label="edit"
+          onClick={() => {
+            if (viewingPatternData?.id) {
+              setEditTarget(viewingPatternData);
+            }
+          }}
+        />
+        <ActionButton
           label="delete"
           onClick={() => {
-            const { data } = userPattern.delete(viewingPatternID);
-            updateCodeWindow(context, { ...data, collection: userPattern.collection });
+            if (viewingPatternData?.id) {
+              setDeleteTarget(viewingPatternData);
+            }
           }}
         />
         <input
@@ -183,6 +352,7 @@ export function PatternsTab({ context }) {
           started={context.started}
           activePattern={activePattern}
           viewingPatternID={viewingPatternID}
+          onReorder={handleReorder}
         />
         {/* )} */}
       </div>
