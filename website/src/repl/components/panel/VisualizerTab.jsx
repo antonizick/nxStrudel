@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import AudioMotionAnalyzer from 'audiomotion-analyzer';
 import { getAudioContext, getSuperdoughAudioController } from '@strudel/webaudio';
+import { useStore } from '@nanostores/react';
 import cx from '@src/cx.mjs';
-import { useSettings, setVisualizerSetting } from '../../../settings.mjs';
+import { useSettings, setVisualizerSetting, settingsMap } from '../../../settings.mjs';
+import { backgroundVideoUrl, setBackgroundVideo, clearBackgroundVideo } from '../../backgroundVideoStore.mjs';
+import { webcamError } from '../../webcamStore.mjs';
 
 const inputClass =
   'bg-background text-xs h-8 max-h-8 border border-box rounded-0 text-foreground border-muted placeholder-muted focus:outline-none focus:ring-0 focus:border-foreground';
@@ -72,6 +75,37 @@ function ButtonGroup({ value, onChange, items }) {
         </button>
       ))}
     </div>
+  );
+}
+
+function SettingsResizeHandle() {
+  const onMouseDown = (e) => {
+    e.preventDefault();
+    const startY = e.clientY;
+    const startHeight = settingsMap.get().visualizerSettingsHeight || 220;
+    document.body.style.cursor = 'row-resize';
+    document.body.style.userSelect = 'none';
+    const onMove = (ev) => {
+      // handle sits above the panel: dragging up (mouse moves up) should grow it
+      const delta = startY - ev.clientY;
+      const next = Math.min(Math.max(startHeight + delta, 80), Math.floor(window.innerHeight * 0.7));
+      settingsMap.setKey('visualizerSettingsHeight', next);
+    };
+    const onUp = () => {
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
+  return (
+    <div
+      onMouseDown={onMouseDown}
+      className="h-1.5 shrink-0 cursor-row-resize hover:bg-foreground/30 active:bg-foreground/50"
+      aria-label="Resize visualizer settings panel"
+    />
   );
 }
 
@@ -227,6 +261,7 @@ export function VisualizerTab({ editorRef } = {}) {
   const analyzerRef = useRef(null);
   const fileInputRef = useRef(null);
   const folderInputRef = useRef(null);
+  const videoInputRef = useRef(null);
   const logoImgRef = useRef(null);
   const staticLogoSrcRef = useRef('');
   const danceStateRef = useRef({ lastSwap: 0, lastActive: 0, dancing: false, currentIndex: -1 });
@@ -249,13 +284,20 @@ export function VisualizerTab({ editorRef } = {}) {
     visualizerBarSpace,
     visualizerSensitivity,
     visualizerBgAlpha,
+    visualizerSettingsHeight,
     visualizerLogoImage,
     visualizerLogoOpacity,
     visualizerLogoLayer,
     visualizerLogoPosition,
     visualizerLogoSize,
     visualizerDanceSpeedMode,
+    backgroundVideoOpacity,
+    backgroundVideoFlipped,
+    webcamEnabled,
+    webcamSize,
   } = useSettings();
+  const videoUrl = useStore(backgroundVideoUrl);
+  const camError = useStore(webcamError);
 
   // create the analyzer once, tapping strudel's own master output node
   useEffect(() => {
@@ -400,6 +442,14 @@ export function VisualizerTab({ editorRef } = {}) {
     reader.readAsDataURL(file);
   };
 
+  const handleVideoUpload = (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // allow re-selecting the same file later
+    if (!file) return;
+    setError(null);
+    setBackgroundVideo(file).catch(() => setError('video loaded, but could not be saved for next time'));
+  };
+
   const handleDanceFolderSelect = (e) => {
     const files = Array.from(e.target.files || []).filter((f) => f.type.startsWith('image/'));
     e.target.value = ''; // allow re-selecting the same folder later
@@ -473,8 +523,12 @@ export function VisualizerTab({ editorRef } = {}) {
         >
           {visualizerControlsOpen ? '▾' : '▸'} visualizer settings
         </button>
+        {visualizerControlsOpen && <SettingsResizeHandle />}
         {visualizerControlsOpen && (
-          <div className="p-2 grid grid-cols-2 sm:grid-cols-4 gap-3 overflow-auto max-h-[220px]">
+          <div
+            className="p-2 grid grid-cols-2 sm:grid-cols-4 gap-3 overflow-auto"
+            style={{ height: visualizerSettingsHeight }}
+          >
             {error && <div className="col-span-full text-xs text-red-500">{error}</div>}
             <FormItem label="Analyzer Mode">
               <SelectInput
@@ -552,6 +606,61 @@ export function VisualizerTab({ editorRef } = {}) {
               </div>
             </FormItem>
 
+            <FormItem label="Background Video">
+              <div className="flex space-x-2">
+                <button
+                  className="px-2 border border-muted hover:opacity-50"
+                  onClick={() => videoInputRef.current?.click()}
+                >
+                  upload
+                </button>
+                {videoUrl && (
+                  <button
+                    className="px-2 border border-muted hover:opacity-50"
+                    onClick={() => clearBackgroundVideo().catch(() => {})}
+                  >
+                    remove
+                  </button>
+                )}
+                <input
+                  ref={videoInputRef}
+                  type="file"
+                  accept="video/*"
+                  className="hidden"
+                  onChange={handleVideoUpload}
+                />
+              </div>
+            </FormItem>
+            <FormItem label="Background Video Opacity">
+              <Slider
+                value={backgroundVideoOpacity}
+                onChange={(v) => setVisualizerSetting('backgroundVideoOpacity', v)}
+              />
+            </FormItem>
+            <FormItem label="Background Video Flip">
+              <Checkbox
+                label="flip horizontal"
+                value={backgroundVideoFlipped}
+                onChange={(v) => setVisualizerSetting('backgroundVideoFlipped', v)}
+              />
+            </FormItem>
+            <FormItem label="Webcam">
+              <Checkbox
+                label="enabled"
+                value={webcamEnabled}
+                onChange={(v) => setVisualizerSetting('webcamEnabled', v)}
+              />
+              {camError && <div className="text-red-500 mt-1">{camError}</div>}
+            </FormItem>
+            <FormItem label="Webcam Size">
+              <Slider
+                value={webcamSize}
+                min={80}
+                max={400}
+                step={10}
+                onChange={(v) => setVisualizerSetting('webcamSize', v)}
+              />
+            </FormItem>
             <FormItem label="Logo Image">
               <div className="flex space-x-2">
                 <button className="px-2 border border-muted hover:opacity-50" onClick={() => fileInputRef.current?.click()}>

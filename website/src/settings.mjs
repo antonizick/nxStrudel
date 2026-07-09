@@ -84,6 +84,7 @@ export const defaultSettings = {
   visualizerBarSpace: 0.1,
   visualizerSensitivity: 'medium', // low | medium | high
   visualizerBgAlpha: 0.7,
+  visualizerSettingsHeight: 220, // px, drag the handle above the settings grid to resize
   // logo dance pacing: 'auto' (follows music energy) | '1'|'2'|'4'|'8'|'16'|'32' (note value,
   // as a fraction of the pattern's cycle length: quarter note = cycle / 4, etc.)
   visualizerDanceSpeedMode: 'auto',
@@ -93,6 +94,14 @@ export const defaultSettings = {
   visualizerLogoLayer: 'front', // front | back
   visualizerLogoSize: 40, // percent of canvas width
   visualizerLogoPosition: 'center', // center | top-left | top-right | bottom-left | bottom-right
+  // background video (plays behind the code editor; the file itself lives in IndexedDB,
+  // see backgroundVideoStore.mjs — this is just the opacity knob)
+  backgroundVideoOpacity: 0.5,
+  backgroundVideoFlipped: false,
+  // webcam bubble (bottom-right of the code editor, see webcamStore.mjs — the live
+  // MediaStream isn't persisted, only whether it's on and how big to draw it)
+  webcamEnabled: false,
+  webcamSize: 160, // px diameter
   // Claude pattern bridge (dev-only, see /bridge/pattern middleware in astro.config.mjs)
   bridgeAutoEval: true,
   // user-created themes (name -> { base, settings, light }), see customThemes.mjs
@@ -150,8 +159,13 @@ export const $settings = computed(settingsMap, (state) => {
     visualizerLedBars: parseBoolean(state.visualizerLedBars),
     visualizerBarSpace: Number(state.visualizerBarSpace),
     visualizerBgAlpha: Number(state.visualizerBgAlpha),
+    visualizerSettingsHeight: Number(state.visualizerSettingsHeight) || 220,
     visualizerLogoOpacity: Number(state.visualizerLogoOpacity),
     visualizerLogoSize: Number(state.visualizerLogoSize),
+    backgroundVideoOpacity: Number(state.backgroundVideoOpacity),
+    backgroundVideoFlipped: parseBoolean(state.backgroundVideoFlipped),
+    webcamEnabled: parseBoolean(state.webcamEnabled),
+    webcamSize: Number(state.webcamSize),
     patternAutoStart: isUdels()
       ? false
       : state.patternAutoStart === undefined

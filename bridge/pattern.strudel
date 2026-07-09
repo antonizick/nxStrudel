@@ -1,28 +1,50 @@
-setcpm(126/4)
+/* 
+   ====================================================
+   @title 2026-07-08 Learning
+   @by Nick
+   ==================================================== 
+*/
 
-const useDrums = 1, useHats = 1, useBass = 1, usePad = 1, useVocals = 1
+/*
+samples('http://localhost:5432/')
 
-samples('github:tidalcycles/dirt-samples')
+// === GLOBAL CONTROLS (put these at the very top) ===
+const globalGain   = slider(0.12, 0, 1, 0.01);   // main volume slider
+const globalRoom   = slider(0.271, 0, 1);           // global reverb amount
+const globalDelay  = slider(0.125, 0, 1);           // global delay wet
+const globalCutoff = slider(4377.2, 200, 12000);    // global lowpass cutoff (example)
 
-const drums = s("bd*4, ~ cp ~ cp").bank('RolandTR909')
-const hats  = s("[~ hh]*4, oh(1,8,4)").bank('RolandTR909').gain(0.6).pan(sine.slow(4))
-const bass  = note("<g1!3 f1>*8").s('sawtooth')
-  .lpf(sine.range(300, 1500).slow(8)).lpq(8)
-  .decay(0.12).sustain(0).gain(0.8)
-const pad   = note("<[g3,bb3,d4] [f3,a3,c4]>").s('gm_pad_warm')
-  .slow(2).attack(0.3).release(0.5).room(0.6).gain(0.35)
-
-// vocal chant sample - classic house/techno style
-const vocals = s("yeah:3(3,8)")
-  .bank('dirt-samples')
-  .begin(0.2)
-  .attack(.01).release(.05)
-  .gain(useVocals ? 0.4 : 0)
-
-stack(
-  useDrums ? drums : silence,
-  useHats  ? hats  : silence,
-  useBass  ? bass  : silence,
-  usePad   ? pad   : silence,
-  useVocals ? vocals : silence,
+  
+$percussion: s("[nx:1 cp hh cp][ bd cp cp cp]").postgain(slider(0.15, 0, 1))._scope()// === GLOBAL APPLICATION (put this at the bottom) ===
+all(x => x
+  .postgain(globalGain)
+  .room(globalRoom)
+  .delay(globalDelay)
+  .lpf(globalCutoff)
 )
+*/
+
+
+/* 
+   ====================================================
+   To Do & Learn 
+   With example repository. 
+   ==================================================== 
+
+Environmental.    
+      Set CPM. 
+
+Samples.    
+      Utilize local samples. 
+      Play one long local sample over several measures. 
+      Cut up a voice sample. Make it sound cool and techno. 
+      Change the pitch and effects on a sample. 
+
+Timing. 
+      Understand the different brackets "" <> [] And how to use them effectively. 
+      Establish long running non-repeating measures for both notes and percussions. 
+
+Effects. 
+      Add cool sounding techno and flange effects. 
+   
+*/

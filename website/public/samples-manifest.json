@@ -1,0 +1,12 @@
+{
+  "nx_pur": [
+    {
+      "name": "a",
+      "url": "samples/nx_pur/BD0010.WAV"
+    },
+    {
+      "name": "b",
+      "url": "samples/nx_pur/BD1010.WAV"
+    }
+  ]
+}
