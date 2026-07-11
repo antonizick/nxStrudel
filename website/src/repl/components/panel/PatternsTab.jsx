@@ -44,9 +44,9 @@ function PatternButton({ showOutline, onClick, pattern, showHiglight, onDragStar
     <a
       draggable
       className={cx(
-        'mr-4 hover:opacity-50 cursor-move block py-1 px-2 rounded',
+        'mr-4 hover:opacity-50 cursor-move block py-1 px-2 rounded border border-transparent',
         showOutline && 'outline outline-1',
-        showHiglight && 'ring-selection',
+        showHiglight && 'bg-selection text-black font-bold text-lg border-foreground',
         isDragging && 'opacity-50 bg-muted',
       )}
       onClick={onClick}
