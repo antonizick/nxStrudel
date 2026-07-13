@@ -7,6 +7,7 @@ import { useLogger } from '../useLogger';
 import { ConsoleTab } from './ConsoleTab';
 import ExportTab from './ExportTab';
 import { FilesTab } from './FilesTab';
+import { NotesTab } from './NotesTab';
 import { PatternsTab } from './PatternsTab';
 import { Reference } from './Reference';
 import { SettingsTab } from './SettingsTab';
@@ -268,6 +269,7 @@ const tabNames = {
   export: 'export',
   console: 'console',
   visualizer: 'visualizer',
+  notes: 'notes',
   settings: 'settings',
 };
 if (TAURI) {
@@ -307,6 +309,8 @@ function PanelContent({ context, tab }) {
       return <ExportTab handleExport={context.handleExport} />;
     case tabNames.visualizer:
       return <VisualizerTab editorRef={context.editorRef} />;
+    case tabNames.notes:
+      return <NotesTab />;
     case tabNames.settings:
       return <SettingsTab started={context.started} editorRef={context.editorRef} />;
     case tabNames.files:

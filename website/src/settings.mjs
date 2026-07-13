@@ -122,8 +122,10 @@ export const $settings = computed(settingsMap, (state) => {
   const userPatterns = JSON.parse(state.userPatterns);
   Object.keys(userPatterns).forEach((key) => {
     const data = userPatterns[key];
-    data.id = data.id ?? key;
-    userPatterns[key] = data;
+    if (typeof data === 'object' && data !== null) {
+      data.id = data.id ?? key;
+      userPatterns[key] = data;
+    }
   });
   return {
     ...state,
@@ -178,7 +180,8 @@ export const $settings = computed(settingsMap, (state) => {
 export const parseBoolean = (booleanlike) => ([true, 'true'].includes(booleanlike) ? true : false);
 
 export function useSettings() {
-  return useStore($settings);
+  const store = useStore($settings);
+  return store || defaultSettings;
 }
 
 export const setActiveFooter = (tab) => settingsMap.setKey('activeFooter', tab);

@@ -22,43 +22,52 @@ import { fileURLToPath } from 'node:url';
 function strudelBridgePlugin() {
   const bridgeDir = process.env.BRIDGE_DIR || fileURLToPath(new URL('../bridge', import.meta.url));
   const bridgeFile = path.join(bridgeDir, 'pattern.strudel');
+  // Same idea as the pattern bridge above, but for a freeform markdown notes file — lets
+  // the Notes tab read/write `bridge/notes.md` on disk instead of only in browser storage.
+  const notesFile = path.join(bridgeDir, 'notes.md');
+
+  function fileRoute(server, route, file) {
+    server.middlewares.use(route, (req, res) => {
+      if (req.method === 'GET') {
+        let code = '';
+        let mtimeMs = 0;
+        try {
+          code = fs.readFileSync(file, 'utf8');
+          mtimeMs = fs.statSync(file).mtimeMs;
+        } catch {
+          // nothing written yet
+        }
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ code, mtimeMs }));
+        return;
+      }
+      if (req.method === 'POST') {
+        let body = '';
+        req.on('data', (chunk) => (body += chunk));
+        req.on('end', () => {
+          try {
+            const { code } = JSON.parse(body);
+            fs.writeFileSync(file, code ?? '');
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify({ ok: true, mtimeMs: fs.statSync(file).mtimeMs }));
+          } catch (e) {
+            res.statusCode = 400;
+            res.end(JSON.stringify({ ok: false, error: e.message }));
+          }
+        });
+        return;
+      }
+      res.statusCode = 405;
+      res.end();
+    });
+  }
+
   return {
     name: 'strudel-bridge',
     configureServer(server) {
       fs.mkdirSync(bridgeDir, { recursive: true });
-      server.middlewares.use('/bridge/pattern', (req, res) => {
-        if (req.method === 'GET') {
-          let code = '';
-          let mtimeMs = 0;
-          try {
-            code = fs.readFileSync(bridgeFile, 'utf8');
-            mtimeMs = fs.statSync(bridgeFile).mtimeMs;
-          } catch {
-            // no pattern written yet
-          }
-          res.setHeader('Content-Type', 'application/json');
-          res.end(JSON.stringify({ code, mtimeMs }));
-          return;
-        }
-        if (req.method === 'POST') {
-          let body = '';
-          req.on('data', (chunk) => (body += chunk));
-          req.on('end', () => {
-            try {
-              const { code } = JSON.parse(body);
-              fs.writeFileSync(bridgeFile, code ?? '');
-              res.setHeader('Content-Type', 'application/json');
-              res.end(JSON.stringify({ ok: true, mtimeMs: fs.statSync(bridgeFile).mtimeMs }));
-            } catch (e) {
-              res.statusCode = 400;
-              res.end(JSON.stringify({ ok: false, error: e.message }));
-            }
-          });
-          return;
-        }
-        res.statusCode = 405;
-        res.end();
-      });
+      fileRoute(server, '/bridge/pattern', bridgeFile);
+      fileRoute(server, '/bridge/notes', notesFile);
     },
   };
 }
