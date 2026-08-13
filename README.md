@@ -2,7 +2,7 @@
 
 Live coding patterns on the web
 
-This fork represents the remarkable work of the Strudel team at its core. My contribution has been modest UI updates and quality-of-life enhancements designed to increase capabilities for jamming, streaming, and content creation workflows.
+This fork represents the remarkable work of the Strudel team at its core. My contribution has been modest UI updates and quality-of-life enhancements designed to increase capabilities, aesthetics, streaming and content creation workflows, and monir quality of life elements. 
 
 **[See the updated Strudel UI in action](https://www.youtube.com/watch?v=XPp6b3VkmN0)**
 
