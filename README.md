@@ -2,6 +2,18 @@
 
 Live coding patterns on the web
 
+This fork represents the remarkable work of the Strudel team at its core. My contribution has been modest UI updates and quality-of-life enhancements designed to increase capabilities for jamming, streaming, and content creation workflows.
+
+**[See the updated Strudel UI in action](https://www.youtube.com/watch?v=XPp6b3VkmN0)**
+
+---
+
+## Screenshots
+
+![Strudel Patterns UI](./assets/strudel-patterns-ui.png)
+
+![Strudel Visual UI](./assets/strudel-visual-ui.png)
+
 ---
 
 ## Custom Modifications Overview
@@ -31,7 +43,10 @@ Integration with local Dirt Samples and custom sample banks via:
 - Soundboard interface at `http://localhost:9100/soundboard.html`
 - Support for both GitHub-hosted and local sample repositories
 
-### **7. Optimized Key Bindings**
+### **7. Native Webcamera Integration**
+Embed live webcamera video natively into patterns for live coding performances, streaming, and content creation. Seamlessly layer video alongside audio synthesis and visualizations.
+
+### **8. Optimized Key Bindings**
 Custom keyboard shortcuts for common operations:
 - **Ctrl+Enter**: Execute code
 - **Ctrl+.**: Stop playback
