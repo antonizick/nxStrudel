@@ -2,6 +2,45 @@
 
 Live coding patterns on the web
 
+---
+
+## Custom Modifications Overview
+
+This fork of Strudel includes several substantial UI and experience enhancements built on top of the core live-coding engine:
+
+### **1. Persistent Notes Tab**
+A dedicated markdown documentation interface integrated into the main REPL. Allows users to maintain session notes, jam logs, and pattern documentation directly alongside their live code. Notes persist across sessions and are editable in real-time.
+
+### **2. Pattern Highlighting & Navigation**
+Enhanced pattern list UI with visual feedback—the currently-edited pattern is highlighted with high-contrast selection styling (black text on selection color), making it easier to track which pattern you're working on in multi-pattern sessions.
+
+### **3. Rich Visual Feedback**
+- **Dynamic Visualizations**: Real-time audio visualization tied to pattern playback
+- **Background Video Layer**: Aesthetic background video integration for immersive jamming sessions
+- **Animated Avatar**: Dancing avatar that responds to music playback, providing visual synchronization cues
+
+### **4. Custom REPL Themes**
+Multiple built-in color themes for the REPL editor, allowing users to customize the aesthetic of the coding environment. Includes support for switching themes on the fly.
+
+### **5. Pattern Bridge Architecture**
+A bridge system (`bridge/pattern.strudel`) enables external pattern files to be loaded and executed, supporting a modular workflow where patterns can be version-controlled and reloaded with sub-second latency.
+
+### **6. Local Sample Management**
+Integration with local Dirt Samples and custom sample banks via:
+- Settings Prebake configuration
+- Soundboard interface at `http://localhost:9100/soundboard.html`
+- Support for both GitHub-hosted and local sample repositories
+
+### **7. Optimized Key Bindings**
+Custom keyboard shortcuts for common operations:
+- **Ctrl+Enter**: Execute code
+- **Ctrl+.**: Stop playback
+- **Shift+Alt+Up**: Duplicate line
+
+All modifications maintain compatibility with the core Strudel live-coding API and documentation while extending the user experience for local development and jamming workflows.
+
+---
+
 
 - Try it here: <https://strudel.cc>
 - Docs: <https://strudel.cc/learn>
